@@ -6,22 +6,44 @@ node_modules/
 # Environment variables and secrets
 .env
 .env.*
+.env*.local
 !.env.example
+
+# Private keys, certificates and keystores
+*.pem
+*.key
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+
+# Expo and React Native
+.expo/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+.kotlin/
+*.orig.*
+/mobile/ios/
+/mobile/android/
 
 # Build artifacts
 dist/
 build/
-.expo/
-web-build/
+*.tsbuildinfo
 
 # Local uploads and user files
 backend/uploads/
+uploads/
 
 # Logs and temporary files
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
 *.log
 .system_generated/
 .DS_Store
 Thumbs.db
+
