@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { dbStore } from '../db/store.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
+import { storageService } from '../services/storageService.js';
 
 export const loanRouter = Router();
 
@@ -99,14 +100,22 @@ loanRouter.post('/', async (req: Request, res: Response) => {
       };
     }
 
-    const loan = await dbStore.createLoan({
-      userId,
-      friendName: friendName.trim(),
-      amount: parsedAmount,
-      dueDate: parsedDueDate,
-      notes: notes ? String(notes).trim() : null,
-      receipt: receiptData,
-    });
+    let loan;
+    try {
+      loan = await dbStore.createLoan({
+        userId,
+        friendName: friendName.trim(),
+        amount: parsedAmount,
+        dueDate: parsedDueDate,
+        notes: notes ? String(notes).trim() : null,
+        receipt: receiptData,
+      });
+    } catch (createErr) {
+      if (receiptData?.publicId) {
+        await storageService.deleteReceipt(receiptData.publicId).catch(() => {});
+      }
+      throw createErr;
+    }
 
     res.status(201).json({
       success: true,

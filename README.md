@@ -398,12 +398,12 @@ If you test with a **Twilio Trial Account**, be aware of these restrictions:
 MiniLedger allows attaching transfer proof, UPI receipts, or invoice photos to any loan.
 
 ### Storage Architecture
-- **Cloudinary Storage (Production)**:
-  When `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` are configured, uploaded receipts are streamed securely to Cloudinary folder `miniledger/receipts`. The resulting HTTPS CDN URL is stored in the PostgreSQL `receipts` table.
-- **Local Disk Storage (Development Fallback)**:
+- **Authenticated Cloudinary Storage**:
+  When `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` are configured in `backend/.env`, uploaded receipts are streamed securely to Cloudinary folder `miniledger/receipts` using `type: 'authenticated'`. Direct, public access without a signature is rejected by Cloudinary with `401 Unauthorized`. Receipts are delivered exclusively via cryptographically signed URLs generated dynamically on authenticated loan queries.
+- **Local Disk Storage (Fallback)**:
   When Cloudinary credentials are not present in `.env`, the backend falls back to local storage in `backend/uploads/receipts/<uuid>.<ext>`.
-- **Protected File Access**:
-  Local files are served via `GET /api/receipts/file/:filename`. Requests are authenticated via Bearer token header or `?token=<token>` query parameter. The endpoint enforces that the requesting user owns the loan or active staging session associated with the file.
+- **Protected File Access & Orphan Prevention**:
+  Receipt retrieval enforces authentication and loan ownership. Upload failures automatically trigger Cloudinary asset rollbacks, and unassociated staged uploads expire to prevent orphaned media.
 
 ### Mobile Upload Engine
 Expo SDK 58 / React Native 0.88 uses a WinterCG-compliant fetch engine (`expo/fetch`). Appending legacy React Native `{ uri, name, type }` objects directly to `FormData` throws `[Error: Unsupported FormDataPart implementation]`. 

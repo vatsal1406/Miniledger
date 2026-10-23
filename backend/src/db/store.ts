@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma.js';
+import { storageService } from '../services/storageService.js';
 import type {
   CreateLoanInput,
   DashboardSummary,
@@ -66,10 +67,18 @@ export class DatabaseStore {
   }
 
   private mapReceipt(r: any): Receipt {
+    let url = r.url;
+    if (r.publicId && !r.publicId.startsWith('local:') && storageService.isReady()) {
+      const signedUrl = storageService.getSignedUrl(r.publicId);
+      if (signedUrl) {
+        url = signedUrl;
+      }
+    }
+
     return {
       id: r.id,
       loanId: r.loanId,
-      url: r.url,
+      url,
       publicId: r.publicId,
       originalFilename: r.originalFilename,
       mimeType: r.mimeType,

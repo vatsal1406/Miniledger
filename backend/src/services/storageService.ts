@@ -30,9 +30,9 @@ export class StorageService {
   constructor() {
     this.localUploadsDir = path.resolve(process.cwd(), 'uploads', 'receipts');
 
-    const cloudName = process.env['CLOUDINARY_CLOUD_NAME'];
-    const apiKey = process.env['CLOUDINARY_API_KEY'];
-    const apiSecret = process.env['CLOUDINARY_API_SECRET'];
+    const cloudName = process.env['CLOUDINARY_CLOUD_NAME']?.trim();
+    const apiKey = process.env['CLOUDINARY_API_KEY']?.trim();
+    const apiSecret = process.env['CLOUDINARY_API_SECRET']?.trim();
 
     if (cloudName && apiKey && apiSecret) {
       cloudinary.config({
@@ -42,7 +42,7 @@ export class StorageService {
         secure: true,
       });
       this.isConfigured = true;
-      console.log('✅ Cloudinary storage service initialized successfully.');
+      console.log('✅ Cloudinary storage service initialized successfully (authenticated receipt mode).');
     } else {
       if (this.isProduction) {
         console.warn('⚠️  Cloudinary credentials missing in production environment.');
@@ -56,6 +56,10 @@ export class StorageService {
     }
   }
 
+  public isReady(): boolean {
+    return this.isConfigured;
+  }
+
   public validateFile(mimeType: string, sizeBytes: number): void {
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
       throw new Error(`Unsupported file type: ${mimeType}. Allowed formats: JPEG, PNG, WebP, HEIC.`);
@@ -65,6 +69,21 @@ export class StorageService {
       const maxMb = MAX_FILE_SIZE_BYTES / (1024 * 1024);
       throw new Error(`File size (${(sizeBytes / (1024 * 1024)).toFixed(1)}MB) exceeds maximum allowed limit of ${maxMb}MB.`);
     }
+  }
+
+  /**
+   * Generates a signed, authenticated delivery URL for private receipt assets.
+   * Direct unauthenticated access without the cryptographic signature returns 401 Unauthorized.
+   */
+  public getSignedUrl(publicId: string): string {
+    if (!this.isConfigured || !publicId || publicId.startsWith('local:')) {
+      return '';
+    }
+    return cloudinary.url(publicId, {
+      type: 'authenticated',
+      sign_url: true,
+      secure: true,
+    });
   }
 
   public async uploadReceipt(
@@ -80,13 +99,16 @@ export class StorageService {
           {
             folder: 'miniledger/receipts',
             resource_type: 'image',
+            type: 'authenticated', // Secure access: not publicly accessible without HMAC signature
           },
           (error, result) => {
             if (error || !result) {
               return reject(new Error(`Cloudinary upload failed: ${error?.message || 'Unknown error'}`));
             }
+            // Generate cryptographically signed delivery URL
+            const signedUrl = this.getSignedUrl(result.public_id) || result.secure_url;
             resolve({
-              url: result.secure_url,
+              url: signedUrl,
               publicId: result.public_id,
               sizeBytes: result.bytes || buffer.length,
               mimeType,
@@ -102,20 +124,18 @@ export class StorageService {
 
     if (this.isProduction) {
       throw new Error(
-        'Cloudinary credentials required in production. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.'
+        'Cloudinary credentials required in production. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in backend/.env.'
       );
     }
 
-    // Local file storage in development
+    // Local file storage in development when Cloudinary is unconfigured
     const ext = path.extname(originalFilename) || '.jpg';
     const filename = `${randomUUID()}${ext}`;
     const filePath = path.join(this.localUploadsDir, filename);
 
     fs.writeFileSync(filePath, buffer);
 
-    // Return relative API URL served by Express
     const url = `/api/receipts/file/${filename}`;
-
     console.warn(`[STORAGE NOTICE] Saved receipt locally to ${filePath} (Cloudinary not configured in .env).`);
 
     return {
@@ -146,7 +166,12 @@ export class StorageService {
 
     if (this.isConfigured) {
       try {
-        await cloudinary.uploader.destroy(publicId);
+        // Authenticated assets require type: 'authenticated' for deletion
+        const res = await cloudinary.uploader.destroy(publicId, { type: 'authenticated' });
+        if (res.result !== 'ok') {
+          // Fallback for any legacy assets uploaded without authenticated type
+          await cloudinary.uploader.destroy(publicId, { type: 'upload' });
+        }
       } catch (err) {
         console.warn('Failed to delete asset from Cloudinary:', err);
       }
